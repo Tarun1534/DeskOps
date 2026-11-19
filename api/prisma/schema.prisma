@@ -1,0 +1,423 @@
+// DeskOps Phase 1: Ticketing Core Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ORG_ADMIN
+  DESK_STAFF
+  TECHNICIAN
+  RESIDENT
+}
+
+enum TicketStatus {
+  NEW
+  TRIAGED
+  ASSIGNED
+  IN_PROGRESS
+  ON_HOLD
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AttachmentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+// ----------------------------------------------------
+// 1. Tenancy & Organisations (FR-1.01, NFR-01)
+// ----------------------------------------------------
+model Organisation {
+  id               String   @id @default(uuid())
+  organisationId   String   @default(uuid()) // Self-referential for uniform tenant scoping
+  name             String
+  slug             String   @unique
+  reopenWindowDays Int      @default(7)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  users              User[]
+  properties         Property[]
+  units              Unit[]
+  tickets            Ticket[]
+  comments           Comment[]
+  ticketEvents       TicketEvent[]
+  attachments        Attachment[]
+  auditEvents        AuditEvent[]
+  meetingRooms       MeetingRoom[]
+  roomBookings       RoomBooking[]
+  technicianProfiles TechnicianProfile[]
+
+  @@index([organisationId])
+}
+
+// ----------------------------------------------------
+// 2. Users & Authentication (FR-1.01, NFR-02)
+// ----------------------------------------------------
+model User {
+  id             String   @id @default(uuid())
+  organisationId String
+  email          String
+  passwordHash   String
+  name           String
+  role           Role     @default(RESIDENT)
+  isActive       Boolean  @default(true)
+  unitId         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation      Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  unit              Unit?              @relation(fields: [unitId], references: [id])
+  technicianProfile TechnicianProfile?
+  createdTickets    Ticket[]           @relation("TicketCreator")
+  assignedTickets   Ticket[]           @relation("TicketAssignee")
+  ticketEvents      TicketEvent[]
+  comments          Comment[]
+  attachments       Attachment[]
+  watchers          TicketWatcher[]
+  auditEvents       AuditEvent[]
+  refreshTokens     RefreshToken[]
+
+  @@unique([organisationId, email])
+  @@index([organisationId])
+  @@index([email])
+}
+
+model RefreshToken {
+  id             String    @id @default(uuid())
+  organisationId String
+  userId         String
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([userId])
+}
+
+// ----------------------------------------------------
+// 3. Properties, Units, and Facilities (FR-1.01)
+// ----------------------------------------------------
+model Property {
+  id             String   @id @default(uuid())
+  organisationId String
+  name           String
+  address        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation         Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  units                Unit[]
+  meetingRooms         MeetingRoom[]
+  tickets              Ticket[]
+  technicianProperties TechnicianProperty[]
+
+  @@index([organisationId])
+}
+
+model Unit {
+  id             String   @id @default(uuid())
+  organisationId String
+  propertyId     String
+  unitNumber     String
+  floor          Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  users        User[]
+  tickets      Ticket[]
+
+  @@unique([propertyId, unitNumber])
+  @@index([organisationId])
+}
+
+// ----------------------------------------------------
+// Client-Specific Rule Models: Lumen Hatch Workspaces (FR-1.08, AC-1.5)
+// Fixed daily booking windows & non-overlapping repairs
+// ----------------------------------------------------
+model MeetingRoom {
+  id               String   @id @default(uuid())
+  organisationId   String
+  propertyId       String
+  name             String
+  capacity         Int      @default(4)
+  dailyWindowStart String   @default("08:00") // 24-hr format (e.g. 08:00)
+  dailyWindowEnd   String   @default("20:00") // 24-hr format (e.g. 20:00)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organisation Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  property     Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  bookings     RoomBooking[]
+  tickets      Ticket[]
+
+  @@index([organisationId])
+  @@index([propertyId])
+}
+
+model RoomBooking {
+  id             String   @id @default(uuid())
+  organisationId String
+  meetingRoomId  String
+  memberName     String
+  memberEmail    String
+  startTime      DateTime
+  endTime        DateTime
+  status         String   @default("CONFIRMED") // CONFIRMED, CANCELLED
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  meetingRoom  MeetingRoom  @relation(fields: [meetingRoomId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([meetingRoomId, startTime, endTime])
+}
+
+// ----------------------------------------------------
+// 4. Technician Profiles, Coverage & Skills (FR-1.01)
+// ----------------------------------------------------
+model TechnicianProfile {
+  id             String   @id @default(uuid())
+  organisationId String
+  userId         String   @unique
+  isAvailable    Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  properties   TechnicianProperty[]
+  skills       TechnicianSkill[]
+
+  @@index([organisationId])
+}
+
+model TechnicianProperty {
+  id                  String   @id @default(uuid())
+  organisationId      String
+  technicianProfileId String
+  propertyId          String
+  createdAt           DateTime @default(now())
+
+  technicianProfile TechnicianProfile @relation(fields: [technicianProfileId], references: [id], onDelete: Cascade)
+  property          Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([technicianProfileId, propertyId])
+  @@index([organisationId])
+}
+
+model TechnicianSkill {
+  id                  String   @id @default(uuid())
+  organisationId      String
+  technicianProfileId String
+  skillName           String
+  createdAt           DateTime @default(now())
+
+  technicianProfile TechnicianProfile @relation(fields: [technicianProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([technicianProfileId, skillName])
+  @@index([organisationId])
+}
+
+// ----------------------------------------------------
+// 5. Ticket Core, Concurrency & History (FR-1.02, FR-1.03, NFR-03, CR-1)
+// ----------------------------------------------------
+model Ticket {
+  id                   String         @id @default(uuid())
+  organisationId       String
+  ticketNumber         Int            @default(autoincrement())
+  title                String
+  description          String
+  category             String         @default("GENERAL") // PLUMBING, ELECTRICAL, HVAC, GENERAL, ROOM_REPAIR
+  priority             TicketPriority @default(MEDIUM)
+  status               TicketStatus   @default(NEW)
+  
+  // Scoping relationships
+  propertyId           String
+  unitId               String?
+  meetingRoomId        String?        // Client-specific: for meeting room repair
+  
+  // Ownership & Assignment
+  createdById          String
+  assignedTechnicianId String?
+  
+  // State machine details
+  holdReason           String?
+  resolutionNotes      String?
+  reopenedAt           DateTime?
+  resolvedAt           DateTime?
+  closedAt             DateTime?
+
+  // Client-specific scheduling (FR-1.08: Lumen Hatch gap repair)
+  scheduledStart       DateTime?
+  scheduledEnd         DateTime?
+
+  // Optimistic concurrency control (NFR-03, AC-1.2)
+  version              Int            @default(1)
+
+  // Change Request CR-1: Merge duplicate tickets
+  mergedIntoTicketId   String?
+  isDuplicate          Boolean        @default(false)
+
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  organisation     Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  property         Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  unit             Unit?           @relation(fields: [unitId], references: [id])
+  meetingRoom      MeetingRoom?    @relation(fields: [meetingRoomId], references: [id])
+  createdBy        User            @relation("TicketCreator", fields: [createdById], references: [id])
+  assignedTo       User?           @relation("TicketAssignee", fields: [assignedTechnicianId], references: [id])
+  mergedIntoTicket Ticket?         @relation("TicketDuplicates", fields: [mergedIntoTicketId], references: [id])
+  duplicateTickets Ticket[]        @relation("TicketDuplicates")
+  events           TicketEvent[]
+  comments         Comment[]
+  attachments      Attachment[]
+  watchers         TicketWatcher[]
+
+  @@index([organisationId])
+  @@index([organisationId, status])
+  @@index([organisationId, assignedTechnicianId])
+  @@index([meetingRoomId, scheduledStart, scheduledEnd])
+}
+
+model TicketEvent {
+  id             String        @id @default(uuid())
+  organisationId String
+  ticketId       String
+  actorId        String?
+  action         String        // e.g. CREATED, TRIAGED, ASSIGNED, STATUS_CHANGE, COMMENT_ADDED, MERGED, REOPENED
+  fromStatus     TicketStatus?
+  toStatus       TicketStatus?
+  metadata       String?       // JSON string for extra transition/actor details
+  createdAt      DateTime      @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  ticket       Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorId], references: [id])
+
+  @@index([organisationId])
+  @@index([ticketId, createdAt])
+}
+
+model Comment {
+  id             String   @id @default(uuid())
+  organisationId String
+  ticketId       String
+  authorId       String
+  content        String
+  isInternal     Boolean  @default(false) // FR-1.07: Staff-only vs public
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  ticket       Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author       User         @relation(fields: [authorId], references: [id])
+
+  @@index([organisationId])
+  @@index([ticketId, createdAt])
+}
+
+model Attachment {
+  id             String           @id @default(uuid())
+  organisationId String
+  ticketId       String
+  uploadedById   String
+  filename       String
+  s3Key          String
+  url            String
+  thumbnailUrl   String?
+  mimeType       String
+  sizeBytes      Int
+  status         AttachmentStatus @default(PENDING)
+  createdAt      DateTime         @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  ticket       Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id])
+
+  @@index([organisationId])
+  @@index([ticketId])
+}
+
+model TicketWatcher {
+  id             String   @id @default(uuid())
+  organisationId String
+  ticketId       String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, userId])
+  @@index([organisationId])
+}
+
+// ----------------------------------------------------
+// 6. Audit & Platform Observability (NFR-08, NFR-09)
+// ----------------------------------------------------
+model AuditEvent {
+  id             String   @id @default(uuid())
+  organisationId String
+  userId         String?
+  action         String
+  entityType     String
+  entityId       String
+  details        String?  // JSON string
+  ipAddress      String?
+  createdAt      DateTime @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organisationId])
+  @@index([entityType, entityId])
+}
+
+model IdempotencyRecord {
+  id             String   @id @default(uuid())
+  organisationId String
+  key            String
+  endpoint       String
+  responseStatus Int
+  responseBody   String
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  @@unique([organisationId, key])
+  @@index([organisationId])
+}
+
+model DeadLetterJob {
+  id             String    @id @default(uuid())
+  organisationId String
+  queueName      String
+  jobName        String
+  payload        String
+  errorReason    String
+  failedAt       DateTime  @default(now())
+  replayedAt     DateTime?
+
+  @@index([organisationId])
+}

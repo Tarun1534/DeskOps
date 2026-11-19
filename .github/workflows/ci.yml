@@ -1,0 +1,98 @@
+name: DeskOps CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  secret-scan:
+    name: Secret & Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gitleaks Secret Scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+  backend-test:
+    name: API Tests & Tenant/Concurrency Verification
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: deskops
+          POSTGRES_PASSWORD: deskops_secret
+          POSTGRES_DB: deskops_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: 'api/package-lock.json'
+
+      - name: Install Dependencies
+        working-directory: ./api
+        run: npm ci
+
+      - name: Run Prisma Generate
+        working-directory: ./api
+        run: npx prisma generate
+
+      - name: Run Unit & Integration Tests (Vitest)
+        working-directory: ./api
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://deskops:deskops_secret@localhost:5432/deskops_test_db?schema=public
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: ci-test-secret-at-least-32-chars-long-12345
+          JWT_REFRESH_SECRET: ci-test-refresh-secret-at-least-32-chars-long
+        run: npm test
+
+      - name: Build API
+        working-directory: ./api
+        run: npm run build
+
+  frontend-build:
+    name: Frontend Build & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+
+      - name: Install Frontend Dependencies
+        working-directory: ./web
+        run: npm ci
+
+      - name: Build Web
+        working-directory: ./web
+        run: npm run build
