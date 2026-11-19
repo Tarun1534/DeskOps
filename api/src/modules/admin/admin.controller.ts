@@ -30,7 +30,7 @@ export const getDeadLetterJobs = async (req: AuthenticatedRequest, res: Response
 export const replayDeadLetterJob = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const tenantId = req.tenantId!;
-    const { id } = req.params;
+    const id = req.params.id as string;
     const replayed = await ThumbnailWorker.replayDeadLetterJob(id, tenantId);
     return res.json({ success: true, data: replayed });
   } catch (err) {

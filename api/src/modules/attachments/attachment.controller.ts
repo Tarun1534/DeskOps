@@ -23,7 +23,7 @@ export const getPresignedUploadUrl = async (
   try {
     const tenantId = req.tenantId!;
     const user = req.user!;
-    const { id: ticketId } = req.params;
+    const ticketId = req.params.id as string;
     const body = PresignSchema.parse(req.body);
 
     await TicketService.getTicketById(tenantId, ticketId, user);
@@ -93,7 +93,8 @@ export const verifyUpload = async (
   try {
     const tenantId = req.tenantId!;
     const user = req.user!;
-    const { id: ticketId, attachmentId } = req.params;
+    const ticketId = req.params.id as string;
+    const attachmentId = req.params.attachmentId as string;
 
     await TicketService.getTicketById(tenantId, ticketId, user);
 
@@ -129,7 +130,7 @@ export const listAttachments = async (
   try {
     const tenantId = req.tenantId!;
     const user = req.user!;
-    const { id: ticketId } = req.params;
+    const ticketId = req.params.id as string;
 
     await TicketService.getTicketById(tenantId, ticketId, user);
 

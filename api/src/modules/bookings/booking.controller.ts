@@ -29,7 +29,7 @@ export const getRooms = async (req: AuthenticatedRequest, res: Response, next: N
 export const getBookings = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const tenantId = req.tenantId!;
-    const { roomId } = req.params;
+    const roomId = req.params.roomId as string;
     const { date } = req.query as { date?: string };
     const bookings = BookingService.getBookingsForRoom(tenantId, roomId, date);
     return res.json({ success: true, data: bookings });
@@ -41,7 +41,7 @@ export const getBookings = async (req: AuthenticatedRequest, res: Response, next
 export const createBooking = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const tenantId = req.tenantId!;
-    const { roomId } = req.params;
+    const roomId = req.params.roomId as string;
     const body = CreateBookingSchema.parse(req.body);
 
     const booking = BookingService.createBooking(
@@ -62,7 +62,7 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response, ne
 export const checkGap = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const tenantId = req.tenantId!;
-    const { roomId } = req.params;
+    const roomId = req.params.roomId as string;
     const body = CheckGapSchema.parse(req.body);
 
     const result = BookingService.validateRepairSchedule(
@@ -81,7 +81,7 @@ export const checkGap = async (req: AuthenticatedRequest, res: Response, next: N
 export const getAvailableGaps = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const tenantId = req.tenantId!;
-    const { roomId } = req.params;
+    const roomId = req.params.roomId as string;
     const dateStr = (req.query.date as string) || new Date().toISOString();
     const gaps = BookingService.getAvailableGaps(tenantId, roomId, new Date(dateStr));
     return res.json({ success: true, data: gaps });

@@ -59,7 +59,7 @@ export const getTicket = async (req: AuthenticatedRequest, res: Response, next: 
   try {
     const tenantId = req.tenantId!;
     const user = req.user!;
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     const ticket = await TicketService.getTicketById(tenantId, id, user);
     return res.json({ success: true, data: ticket });
@@ -72,7 +72,7 @@ export const triageTicket = async (req: AuthenticatedRequest, res: Response, nex
   try {
     const tenantId = req.tenantId!;
     const user = req.user!;
-    const { id } = req.params;
+    const id = req.params.id as string;
     const body = TriageTicketSchema.parse(req.body);
 
     const ticket = await TicketService.triageTicket(tenantId, id, user, body);
@@ -86,7 +86,7 @@ export const assignTicket = async (req: AuthenticatedRequest, res: Response, nex
   try {
     const tenantId = req.tenantId!;
     const user = req.user!;
-    const { id } = req.params;
+    const id = req.params.id as string;
     const body = AssignTicketSchema.parse(req.body);
 
     const ticket = await TicketService.assignTicket(
@@ -107,7 +107,7 @@ export const transitionTicket = async (req: AuthenticatedRequest, res: Response,
   try {
     const tenantId = req.tenantId!;
     const user = req.user!;
-    const { id } = req.params;
+    const id = req.params.id as string;
     const body = TransitionTicketSchema.parse(req.body);
 
     const ticket = await TicketService.transitionTicket(
@@ -129,7 +129,7 @@ export const mergeTicket = async (req: AuthenticatedRequest, res: Response, next
   try {
     const tenantId = req.tenantId!;
     const user = req.user!;
-    const { id } = req.params;
+    const id = req.params.id as string;
     const body = MergeTicketSchema.parse(req.body);
 
     const result = await TicketService.mergeTickets(
@@ -149,7 +149,7 @@ export const getEvents = async (req: AuthenticatedRequest, res: Response, next: 
   try {
     const tenantId = req.tenantId!;
     const user = req.user!;
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     const events = await TicketService.getTicketEvents(tenantId, id, user);
     return res.json({ success: true, data: events });

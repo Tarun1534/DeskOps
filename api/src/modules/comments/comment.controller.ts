@@ -15,7 +15,7 @@ export const addComment = async (req: AuthenticatedRequest, res: Response, next:
   try {
     const tenantId = req.tenantId!;
     const user = req.user!;
-    const { id: ticketId } = req.params;
+    const ticketId = req.params.id as string;
     const body = CreateCommentSchema.parse(req.body);
 
     // Verify ticket access
@@ -70,7 +70,7 @@ export const listComments = async (req: AuthenticatedRequest, res: Response, nex
   try {
     const tenantId = req.tenantId!;
     const user = req.user!;
-    const { id: ticketId } = req.params;
+    const ticketId = req.params.id as string;
 
     // Verify ticket access
     await TicketService.getTicketById(tenantId, ticketId, user);
